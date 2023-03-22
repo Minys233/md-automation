@@ -36,7 +36,6 @@ class TestSubprocessRunner(unittest.TestCase):
         self.assertEqual(sr.success, True)
         self.assertEqual(sr.check, True)
         self.assertEqual(sr.stdout, "Hello")
-        print(sr.proc)
 
 if __name__ == '__main__':
     unittest.main()

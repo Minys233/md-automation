@@ -41,29 +41,29 @@ class PDBFixerRunner(Runner):
     # https://www.wwpdb.org/documentation/file-format-content/format33
     _TITLE_PREFIX = (
         # sect2.html Title section
-        "HEADER", "OBSLTE", "TITLE", "SPLIT", "CAVEAT", "COMPND", "SOURCE", "KEYWDS", "EXPDTA", "AUTHOR", "REVDAT", "SPRSDE", "JRNL", "REMARK"
+        "HEADER", "OBSLTE", "TITLE ", "SPLIT ", "CAVEAT", "COMPND", "SOURCE", "KEYWDS", "EXPDTA", "AUTHOR", "REVDAT", "SPRSDE", "JRNL  ", "REMARK"
     )
     _MAINBODY_PREFIX = (
         # sect3.html Primary structure section
-        "SEQRES", "DBREF", # "DBREF1", "DBREF2", "SEQADV", "MODRES", #  no longer used
+        "SEQRES", "DBREF ", # "DBREF1", "DBREF2", "SEQADV", "MODRES", #  no longer used
         # sect4.html Heterogen section
-        "HET", "HETNAM", "HETSYN", "FORMUL", # no longer used
+        "HET   ", "HETNAM", "HETSYN", "FORMUL", # no longer used
         # sect5.html Secondary structure section
         # "HELIX", "SHEET", "TURN", # no longer used
         # sect8.html Crystallographic and Coordinate Transformation Section
         "CRYST1", "ORIGX1", "ORIGX2", "ORIGX3", "SCALE1", "SCALE2", "SCALE3", "MTRIX1", "MTRIX2", "MTRIX3",
         # sect9.html Coordinate section
-        "MODEL", "ATOM", "TER", "HETATM", "ENDMDL", # "ANISOU", # no longer used
+        "MODEL ", "ATOM  ", "TER   ", "HETATM", "ENDMDL", # "ANISOU", # no longer used
         # sect10.html Connectivity section
         "CONECT",
         # sect11.html Bookkeeping section
-        "END", # "MASTER", # no longer used
+        "END   ", # "MASTER", # no longer used
     )
     _OTHER_PREFIX = (
         # sect6.html The connectivity annotation section
-        "SSBOND", "LINK", "CISPEP",
+        "SSBOND", "LINK  ", "CISPEP",
         # sect7.html Miscellaneous Features Section
-        "SITE",
+        "SITE  ",
     )
 
     def __init__(self, input: Union[str, Path, io.IOBase], name: str = '', default_temperature:float=300.15, default_pH: float=7.0):
@@ -137,11 +137,12 @@ class PDBFixerRunner(Runner):
             fixer.replaceNonstandardResidues()
             if remove_het:
                 removed_heterogens = self._het2delete(fixer, keep_water=keep_water)
+                logger.warning(f"Removed heterogens? {remove_het}: {removed_heterogens}")
                 fixer.removeHeterogens(keepWater=keep_water)
-
+            else:
+                logger.warning(f"Removed heterogens? {remove_het}")
             logger.warning(f"Missing residues: {fixer.missingResidues}")
             logger.warning(f"Nonstandard residues: {fixer.nonstandardResidues}")
-            logger.warning(f"Removed heterogens? {remove_het}: {removed_heterogens}")
             fixer.findMissingAtoms()
             fixer.addMissingAtoms(seed=None)
             fixer.addMissingHydrogens(self.pH, forcefield=self._forcefield)
@@ -159,6 +160,7 @@ class PDBFixerRunner(Runner):
             lines[1] = f"REMARK   1 remove_het={remove_het} keep_water={keep_water} mutations={mutations}\n"
             lines = lines[:2] + self.title_lines + [l for l in self.mainbody_lines if l.startswith(self._MAINBODY_PREFIX[:12])] + self.other_lines + lines[2:]
             self.pdbout_str = ''.join(lines)
+
         except Exception as e:
             logger.critical(f'Error in PDBFixer: {e}')
             self.pdbout_str = ""
@@ -188,12 +190,7 @@ class PDBFixerRunner(Runner):
         return self.pdbout_str != ""
 
 if __name__ == '__main__':
-    fixer = PDBFixerRunner('test_data/1PLC.pdb', name='1PLC')
-    print("====== TITLE lines ======")
-    print(len(fixer.title_lines))
-    print("====== MAINBODY lines ======")
-    print(len(fixer.mainbody_lines))
-    print("====== OTHER lines ======")
-    print(len(fixer.other_lines))
-    fixer.run(remove_het=True, keep_water=True) #mutations=['A:PRO-2-GLY', 'B:PRO-2-GLY'])
-    # fixer.write('test_data/10GS_fixed.pdb')
+    fixer = PDBFixerRunner('./test_data/10GS.pdb', '10GS.pdb')
+    fixer.run(remove_het=False, keep_water=True)
+    with open('./test_data/10GS.fixed.pdb', 'w') as f:
+        f.write(fixer.pdbout_str)

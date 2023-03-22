@@ -45,6 +45,9 @@ class StringStream:
     def readline(self, size=-1):
         return self._handle.readline(size=size)
     
+    def readlines(self, hint=-1):
+        return self._handle.readlines(hint)
+    
     def write(self, s):
         return self._handle.write(s)
     
