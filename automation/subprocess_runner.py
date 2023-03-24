@@ -6,7 +6,7 @@ from runner import Runner
 logger = logging.getLogger(__name__)
 
 
-class SubprocessRunner:
+class SubprocessRunner(Runner):
     _USED_KWARGS = ['capture_output', 'encoding', 'shell', 'input', 'errors', 'check']
 
     def __init__(self, cmd: Union[List, str], stdin: str="", check: bool=False, **kwargs):
@@ -18,27 +18,20 @@ class SubprocessRunner:
         :type stdin: str, optional
         :param check: check if the subporocess return 0, defaults to False
         :type check: bool, optional
+        :param kwargs: keyword arguments to be passed to subprocess.run
+        :type kwargs: dict
         """
         if isinstance(cmd, str):
             cmd = cmd.split()
-        self._cmd = cmd
         self._stdin = stdin
         self._check = check
         self._proc = None
-        self._operated = False
         self._kwargs = kwargs
+        super().__init__(cmd, operated=False)
     
     def __repr__(self) -> str:
         return f'{self.__class__.__name__}({self._cmd}, {self._stdin}, {self._kwargs})'
 
-    @property
-    def operated(self) -> bool:
-        return self._operated
-
-    @property
-    def cmd(self) -> str:
-        return self._cmd
-    
     @property
     def check(self) -> bool:
         return self._check

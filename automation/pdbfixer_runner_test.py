@@ -24,9 +24,9 @@ class TestPDBFixerRunner(unittest.TestCase):
     # def test_keep_chainid(self):
     #     pass
     def test_keep_resid(self):
-        fixer = PDBFixerRunner(curr_path / 'test_data' / '1B07.pdb', name='1B07')
+        fixer = PDBFixerRunner(curr_path / 'test_data' / '1B07.pdb', name='1B07', remove_het=False, keep_water=False)
         # keep everything
-        fixer.run(remove_het=False, keep_water=False)
+        fixer.run()
         self.assertTrue(fixer.success)
         original_residx2name = dict()
         after_residx2name = dict()
@@ -42,8 +42,8 @@ class TestPDBFixerRunner(unittest.TestCase):
             self.assertEqual(original_residx2name[idx], after_residx2name[idx])
         
     def test_disulfide_bond(self):
-        fixer = PDBFixerRunner(curr_path / 'test_data' / '1IL8.pdb', name='1IL8')
-        fixer.run(remove_het=True, keep_water=True)
+        fixer = PDBFixerRunner(curr_path / 'test_data' / '1IL8.pdb', name='1IL8', remove_het=True, keep_water=True)
+        fixer.run()
         self.assertTrue(fixer.success)
         prefixset = set()
         for line in fixer.pdbout_str.split('\n'):
@@ -51,8 +51,8 @@ class TestPDBFixerRunner(unittest.TestCase):
         self.assertIn('CONECT', prefixset)
     
     def test_remove_het(self):
-        fixer = PDBFixerRunner(curr_path / 'test_data' / '10GS.pdb', name='10GS')
-        fixer.run(remove_het=True, keep_water=True)
+        fixer = PDBFixerRunner(curr_path / 'test_data' / '10GS.pdb', name='10GS', remove_het=True, keep_water=True)
+        fixer.run()
         self.assertTrue(fixer.success)
         resname = set()
         for line in fixer.pdbout_str.split('\n'):
@@ -63,8 +63,8 @@ class TestPDBFixerRunner(unittest.TestCase):
         self.assertIn('HOH', resname)
     
     def test_keep_het(self):
-        fixer = PDBFixerRunner(curr_path / 'test_data' / '10GS.pdb', name='10GS')
-        fixer.run(remove_het=False, keep_water=True)
+        fixer = PDBFixerRunner(curr_path / 'test_data' / '10GS.pdb', name='10GS', remove_het=False, keep_water=True)
+        fixer.run()
         self.assertTrue(fixer.success)
 
         inputresname = dict()
@@ -88,8 +88,8 @@ class TestPDBFixerRunner(unittest.TestCase):
         self.assertEqual(inputresname['HOH'], resname['HOH'])
 
     def test_dummy_keep_water(self):
-        fixer = PDBFixerRunner(curr_path / 'test_data' / '10GS.pdb', name='10GS')
-        fixer.run(remove_het=False, keep_water=False)
+        fixer = PDBFixerRunner(curr_path / 'test_data' / '10GS.pdb', name='10GS', remove_het=False, keep_water=False)
+        fixer.run()
         self.assertTrue(fixer.success)
         resname = set()
         for line in fixer.pdbout_str.split('\n'):
@@ -99,8 +99,8 @@ class TestPDBFixerRunner(unittest.TestCase):
         self.assertIn('MES', resname)
         self.assertIn('HOH', resname)
 
-        fixer = PDBFixerRunner(curr_path / 'test_data' / '10GS.pdb', name='10GS')
-        fixer.run(remove_het=False, keep_water=True)
+        fixer = PDBFixerRunner(curr_path / 'test_data' / '10GS.pdb', name='10GS', remove_het=False, keep_water=True)
+        fixer.run()
         self.assertTrue(fixer.success)
         resname2 = set()
         for line in fixer.pdbout_str.split('\n'):

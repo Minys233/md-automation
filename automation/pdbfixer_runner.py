@@ -10,7 +10,6 @@ from util import StringStream
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
-# logger.setLevel(logging.DEBUG)
 
 
 def get_temperature_pH(remarks_lines, default_temperature=300, default_pH=7.0):
@@ -31,7 +30,6 @@ def get_temperature_pH(remarks_lines, default_temperature=300, default_pH=7.0):
     if not pH:
         pH = default_pH
     return temp, pH
-
 
 class PDBFixerRunner(Runner):
     """A subclass of PDBFixer that can be used to fix PDB files.
@@ -66,20 +64,28 @@ class PDBFixerRunner(Runner):
         "SITE  ",
     )
 
-    def __init__(self, input: Union[str, Path, io.IOBase], name: str = '', default_temperature:float=300.15, default_pH: float=7.0):
+    def __init__(self, input: Union[str, Path, io.IOBase, StringStream], name: str = '', remove_het: bool=False, keep_water: bool = True, mutations: List[str] = [], default_temperature:float=300.15, default_pH: float=7.0):
         self.pdbin_handle = StringStream(input, name='input')
         self.name = name
+        # parameters for pdbfixer
+        self.remove_het = remove_het
+        self.keep_water = keep_water
+        self.mutations = mutations
+        # store the lines in the PDB file
         self.title_lines = []
         self.mainbody_lines = []
         self.other_lines = []
         self.notused_lines = []
+        self._parse()
         self.temp, self.pH = get_temperature_pH(self.title_lines, default_temperature=default_temperature, default_pH=default_pH)
         logger.info(f'Found in {name} - Temperature: {self.temp}, pH: {self.pH}')
-        self._forcefield = None # ForceField('amber14-all.xml', 'amber14/tip3p.xml')
-        self._parse()
-        self._operated = False
-        self._cmd = "Not yet run"
-        self.pdbout_str = ""
+        # store the output
+        self.pdbout = ""
+
+        cmd = f"pdbfixer  --ph {self.pH}" + " --keep-heterogens" if not remove_het else "" + \
+              " water" if keep_water else "" + \
+              f" --add-residues --add-atoms --replace-nonstandard | fixer.applyMutations({mutations})"
+        super().__init__(f'Equivalent to run: {cmd}', False)
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.name})'
@@ -111,8 +117,8 @@ class PDBFixerRunner(Runner):
                 removed_heterogens.append(residue)
         return removed_heterogens
 
-    def run(self, ignore_opreated: bool=False, remove_het: bool=False, keep_water: bool = True, mutations: List[str] = []) -> None:
-        """Run the PDBFixer pipeline, results are stored in self.pdbout_str as str.
+    def run(self, ignore_opreated: bool=False) -> None:
+        """Run the PDBFixer pipeline, results are stored in self.pdbout as str.
 
         :param remove_het: remove heterogens, don't do this for leap will recognize some of them, defaults to False
         :param keep_water: keep water in the structure, defaults to True
@@ -127,7 +133,6 @@ class PDBFixerRunner(Runner):
                 logging.error(f'{self} has already been operated, skipping.')
                 return
         self._operated = True
-        self._cmd = f"remove_het={remove_het}, keep_water={keep_water}, mutations={mutations}"
 
         try:
             pdbstrin = ''.join(self.title_lines + self.mainbody_lines + self.other_lines)
@@ -135,19 +140,19 @@ class PDBFixerRunner(Runner):
             fixer.findMissingResidues()
             fixer.findNonstandardResidues()
             fixer.replaceNonstandardResidues()
-            if remove_het:
-                removed_heterogens = self._het2delete(fixer, keep_water=keep_water)
-                logger.warning(f"Removed heterogens? {remove_het}: {removed_heterogens}")
-                fixer.removeHeterogens(keepWater=keep_water)
+            if self.remove_het:
+                removed_heterogens = self._het2delete(fixer, keep_water=self.keep_water)
+                logger.warning(f"Removed heterogens? {self.remove_het}: {removed_heterogens}")
+                fixer.removeHeterogens(keepWater=self.keep_water)
             else:
-                logger.warning(f"Removed heterogens? {remove_het}")
+                logger.warning(f"Removed heterogens? {self.remove_het}")
             logger.warning(f"Missing residues: {fixer.missingResidues}")
             logger.warning(f"Nonstandard residues: {fixer.nonstandardResidues}")
             fixer.findMissingAtoms()
             fixer.addMissingAtoms(seed=None)
-            fixer.addMissingHydrogens(self.pH, forcefield=self._forcefield)
+            fixer.addMissingHydrogens(self.pH, forcefield=None)
 
-            for mutstr in mutations:
+            for mutstr in self.mutations:
                 chainid, mut = mutstr.split(':')
                 fixer.applyMutations(mutations=[mut], chain_id=chainid)
 
@@ -157,13 +162,13 @@ class PDBFixerRunner(Runner):
             pdbout.seek(0)
             lines = pdbout.readlines()
             assert lines[1].startswith('CRYST1'), f"Popped a wrong line: {lines[1]}"
-            lines[1] = f"REMARK   1 remove_het={remove_het} keep_water={keep_water} mutations={mutations}\n"
+            lines[1] = f"REMARK   1 remove_het={self.remove_het} keep_water={self.keep_water} mutations={self.mutations}\n"
             lines = lines[:2] + self.title_lines + [l for l in self.mainbody_lines if l.startswith(self._MAINBODY_PREFIX[:12])] + self.other_lines + lines[2:]
-            self.pdbout_str = ''.join(lines)
+            self.pdbout = ''.join(lines)
 
         except Exception as e:
             logger.critical(f'Error in PDBFixer: {e}')
-            self.pdbout_str = ""
+            self.pdbout = ""
 
     def write(self, outfile: Union[str, Path]):
         """Write the fixed PDB file to a file.
@@ -173,24 +178,16 @@ class PDBFixerRunner(Runner):
         """
         if self._operated:
             with open(outfile, 'w') as f:
-                f.write(self.pdbout_str)
+                f.write(self.pdbout)
         else:
             logger.error(f'{self} has not been operated, skipping.')
 
     @property
-    def operated(self) -> bool:
-        return self._operated
-
-    @property
-    def cmd(self) -> str:
-        return self._cmd
-    
-    @property
     def success(self) -> bool:
-        return self.pdbout_str != ""
+        return self.pdbout != ""
 
 if __name__ == '__main__':
-    fixer = PDBFixerRunner('./test_data/10GS.pdb', '10GS.pdb')
-    fixer.run(remove_het=False, keep_water=True)
-    with open('./test_data/10GS.fixed.pdb', 'w') as f:
-        f.write(fixer.pdbout_str)
+    fixer = PDBFixerRunner('./test_data/10GS.pdb', '10GS.pdb', remove_het=False, keep_water=True)
+    fixer.run()
+    fixer.write('./test_data/10GS.fixed.pdb')
+
