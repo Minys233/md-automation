@@ -34,7 +34,7 @@ class TestPDBFixerRunner(unittest.TestCase):
         for i in fixer.pdbin_handle.readlines():
             if i.startswith('ATOM') or i.startswith('HETATM'):
                 original_residx2name[i[21:26].strip()] = i[17:20].strip()
-        for i in fixer.pdbout_str.split('\n'):
+        for i in fixer.pdbout.split('\n'):
             if i.startswith('ATOM') or i.startswith('HETATM'):
                 after_residx2name[i[21:26].strip()] = i[17:20].strip()
         self.assertTrue(len(original_residx2name) <= len(after_residx2name))
@@ -46,7 +46,7 @@ class TestPDBFixerRunner(unittest.TestCase):
         fixer.run()
         self.assertTrue(fixer.success)
         prefixset = set()
-        for line in fixer.pdbout_str.split('\n'):
+        for line in fixer.pdbout.split('\n'):
             prefixset.add(line[:6].strip())
         self.assertIn('CONECT', prefixset)
     
@@ -55,7 +55,7 @@ class TestPDBFixerRunner(unittest.TestCase):
         fixer.run()
         self.assertTrue(fixer.success)
         resname = set()
-        for line in fixer.pdbout_str.split('\n'):
+        for line in fixer.pdbout.split('\n'):
             if line.startswith('ATOM') or line.startswith('HETATM'):
                 resname.add(line[17:20].strip())
         self.assertNotIn('VWW', resname)
@@ -75,7 +75,7 @@ class TestPDBFixerRunner(unittest.TestCase):
                     continue
                 inputresname[line[17:20].strip()] = inputresname.get(line[17:20].strip(), 0) + 1
         resname = dict()
-        for line in fixer.pdbout_str.split('\n'):
+        for line in fixer.pdbout.split('\n'):
             if line.startswith('ATOM') or line.startswith('HETATM'):
                 if line[17:20].strip() == 'HOH' and 'O   HOH' not in line:
                     continue
@@ -92,7 +92,7 @@ class TestPDBFixerRunner(unittest.TestCase):
         fixer.run()
         self.assertTrue(fixer.success)
         resname = set()
-        for line in fixer.pdbout_str.split('\n'):
+        for line in fixer.pdbout.split('\n'):
             if line.startswith('ATOM') or line.startswith('HETATM'):
                 resname.add(line[17:20].strip())
         self.assertIn('VWW', resname)
@@ -103,7 +103,7 @@ class TestPDBFixerRunner(unittest.TestCase):
         fixer.run()
         self.assertTrue(fixer.success)
         resname2 = set()
-        for line in fixer.pdbout_str.split('\n'):
+        for line in fixer.pdbout.split('\n'):
             if line.startswith('ATOM') or line.startswith('HETATM'):
                 resname2.add(line[17:20].strip())
         self.assertIn('VWW', resname2)
@@ -111,7 +111,11 @@ class TestPDBFixerRunner(unittest.TestCase):
         self.assertIn('HOH', resname2)
         self.assertEqual(resname, resname2)
 
-
+    def test_mutation(self):
+        fixer = PDBFixerRunner(curr_path / 'test_data' / '10GS.pdb', name='10GS', mutations=["A:PRO-2-GLY", "A:TYR-3-PRO"])
+        fixer.run()
+        self.assertTrue(fixer.success)
+        # print(fixer.pdbout)
 
 if __name__ == '__main__':
     unittest.main()

@@ -2,6 +2,7 @@ from subprocess import run
 from typing import List, Union
 import logging
 from runner import Runner
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +47,26 @@ class SubprocessRunner(Runner):
 
     @property
     def stderr(self) -> str:
-        return self._proc.stderr if self._proc is not None else ''
+        if self._proc is None:
+            raise RuntimeError('Subprocess has not been run yet.')
+        return self._proc.stderr
+    
     @property
     def stdout(self) -> str:
-        return self._proc.stdout if self._proc is not None else ''
-
+        if self._proc is None:
+            raise RuntimeError('Subprocess has not been run yet.')
+        return self._proc.stdout
+    
     def append_cmd(self, cmd: Union[List, str]) -> None:
         if isinstance(cmd, str):
             cmd = cmd.split()
         self._cmd += cmd
+
+    def write(self, saveto: Union[str, Path]) -> None:
+        if self._proc is None:
+            raise RuntimeError('Subprocess has not been run yet.')
+        with open(saveto, 'w') as f:
+            f.write(self._proc.stdout)
 
     def run(self, ignore_opreated: bool=False) -> None:
         if self._operated:

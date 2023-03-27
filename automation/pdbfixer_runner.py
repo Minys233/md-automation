@@ -64,20 +64,24 @@ class PDBFixerRunner(Runner):
         "SITE  ",
     )
 
-    def __init__(self, input: Union[str, Path, io.IOBase, StringStream], name: str = '', remove_het: bool=False, keep_water: bool = True, mutations: List[str] = [], default_temperature:float=300.15, default_pH: float=7.0):
+    def __init__(self, input: Union[str, Path, io.IOBase, StringStream], name: str = '', remove_het: bool=False, keep_water: bool = True, mutations: List[str] = [], use_default_pH: bool=False, default_temperature:float=300.15, default_pH: float=7.0):
         self.pdbin_handle = StringStream(input, name='input')
         self.name = name
         # parameters for pdbfixer
         self.remove_het = remove_het
         self.keep_water = keep_water
         self.mutations = mutations
+        self.use_default_pH = use_default_pH
         # store the lines in the PDB file
         self.title_lines = []
         self.mainbody_lines = []
         self.other_lines = []
         self.notused_lines = []
         self._parse()
-        self.temp, self.pH = get_temperature_pH(self.title_lines, default_temperature=default_temperature, default_pH=default_pH)
+        if use_default_pH:
+            self.temp, self.pH = default_temperature, default_pH
+        else:
+            self.temp, self.pH = get_temperature_pH(self.title_lines, default_temperature=default_temperature, default_pH=default_pH)
         logger.info(f'Found in {name} - Temperature: {self.temp}, pH: {self.pH}')
         # store the output
         self.pdbout = ""
@@ -134,41 +138,37 @@ class PDBFixerRunner(Runner):
                 return
         self._operated = True
 
-        try:
-            pdbstrin = ''.join(self.title_lines + self.mainbody_lines + self.other_lines)
-            fixer = PDBFixer(pdbfile=io.StringIO(pdbstrin))
-            fixer.findMissingResidues()
-            fixer.findNonstandardResidues()
-            fixer.replaceNonstandardResidues()
-            if self.remove_het:
-                removed_heterogens = self._het2delete(fixer, keep_water=self.keep_water)
-                logger.warning(f"Removed heterogens? {self.remove_het}: {removed_heterogens}")
-                fixer.removeHeterogens(keepWater=self.keep_water)
-            else:
-                logger.warning(f"Removed heterogens? {self.remove_het}")
-            logger.warning(f"Missing residues: {fixer.missingResidues}")
-            logger.warning(f"Nonstandard residues: {fixer.nonstandardResidues}")
-            fixer.findMissingAtoms()
-            fixer.addMissingAtoms(seed=None)
-            fixer.addMissingHydrogens(self.pH, forcefield=None)
+        pdbstrin = ''.join(self.title_lines + self.mainbody_lines + self.other_lines)
+        fixer = PDBFixer(pdbfile=io.StringIO(pdbstrin))
+        for mutstr in self.mutations:
+            logger.warning(f"Applying mutation: {mutstr}")
+            chainid, mut = mutstr.split(':')
+            fixer.applyMutations(mutations=[mut], chain_id=chainid)
+        fixer.findMissingResidues()
+        logger.warning(f"Missing residues: {fixer.missingResidues}")
+        fixer.findNonstandardResidues()
+        logger.warning(f"Nonstandard residues: {fixer.nonstandardResidues}")
+        fixer.replaceNonstandardResidues()
+        if self.remove_het:
+            removed_heterogens = self._het2delete(fixer, keep_water=self.keep_water)
+            logger.warning(f"Removed heterogens? {self.remove_het}: {removed_heterogens}")
+            fixer.removeHeterogens(keepWater=self.keep_water)
+        else:
+            logger.warning(f"Removed heterogens? {self.remove_het}")
+        fixer.findMissingAtoms()
+        logger.warning(f"Missing atoms: {fixer.missingAtoms}")
+        logger.warning(f"Missing terminal atoms: {fixer.missingTerminals}")
+        fixer.addMissingAtoms(seed=None)
+        fixer.addMissingHydrogens(self.pH, forcefield=None)
+        pdbout = io.StringIO()
+        PDBFile.writeFile(fixer.topology, fixer.positions, pdbout, keepIds=True)
+        pdbout.seek(0)
+        lines = pdbout.readlines()
+        assert lines[1].startswith('CRYST1'), f"Popped a wrong line: {lines[1]}"
+        lines[1] = f"REMARK   1 remove_het={self.remove_het} keep_water={self.keep_water} mutations={self.mutations}\n"
+        lines = lines[:2] + self.title_lines + [l for l in self.mainbody_lines if l.startswith(self._MAINBODY_PREFIX[:12])] + self.other_lines + lines[2:]
+        self.pdbout = ''.join(lines)
 
-            for mutstr in self.mutations:
-                chainid, mut = mutstr.split(':')
-                fixer.applyMutations(mutations=[mut], chain_id=chainid)
-
-            pdbout = io.StringIO()
-            PDBFile.writeFile(fixer.topology, fixer.positions, pdbout, keepIds=True)
-
-            pdbout.seek(0)
-            lines = pdbout.readlines()
-            assert lines[1].startswith('CRYST1'), f"Popped a wrong line: {lines[1]}"
-            lines[1] = f"REMARK   1 remove_het={self.remove_het} keep_water={self.keep_water} mutations={self.mutations}\n"
-            lines = lines[:2] + self.title_lines + [l for l in self.mainbody_lines if l.startswith(self._MAINBODY_PREFIX[:12])] + self.other_lines + lines[2:]
-            self.pdbout = ''.join(lines)
-
-        except Exception as e:
-            logger.critical(f'Error in PDBFixer: {e}')
-            self.pdbout = ""
 
     def write(self, outfile: Union[str, Path]):
         """Write the fixed PDB file to a file.

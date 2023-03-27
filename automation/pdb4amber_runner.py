@@ -10,6 +10,19 @@ import parmed
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 
+def add_H4pH_protein_pdb2pqr(inp: Union[str, Path, io.IOBase, StringStream], pH: float, name: str = ''):
+    """Adjust the H given input file, using pdb2pqr.
+    Lose all information other than ATOM and HETATM.
+    """
+    inp = StringStream(inp, name)
+    obabel_runner = SubprocessRunner(f'pdb2pqr --ff PARSE --keep-chain --pdb-output 10GS_fix.pqr.pdb --include-header --with-ph {pH} --pH {pH} --titration-state-method propka {pdbin} {pqrout}', stdin=inp.read(), check=True)
+    obabel_runner.run()
+    out = obabel_runner.stdout
+    return out.getvalue()
+
+# pdb2pqr --ff PARSE --keep-chain --pdb-output 10GS_fix.pqr.pdb --include-header --with-ph 7 --pH 7 --titration-state-method propka 10GS_fix.pdb 10GS_fix.pqr
+
+
 class PDB4AmberRunner(Runner):
     def __init__(self, pdbin: Union[str, Path, io.IOBase, StringStream], name: str = '',
                  rm_water: bool=False, prot_only: bool=False, amber_only: bool=False,
@@ -33,6 +46,9 @@ class PDB4AmberRunner(Runner):
         super().__init__(f'Equivalent to run: {cmd}', False)
         # result stored here
         self.renum = None
+        self.prot = None
+        self.amber = None
+        self.custom = None
         self.nonprot = None
         self.water = None
         self.sslink = None
@@ -41,7 +57,7 @@ class PDB4AmberRunner(Runner):
         self.pdbout = None
 
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}({self._pdbin.name}), rm_water={self.rm_water}, prot_only={self.prot_only}, amber_only={self.amber_only}, custom_mask={self.custom_mask})'
+        return f'{self.__class__.__name__}({self.pdbin.name}), rm_water={self.rm_water}, prot_only={self.prot_only}, amber_only={self.amber_only}, custom_mask={self.custom_mask})'
 
     def run(self, ignore_opreated: bool=False):
         """This function is modified from pdb4amber.AmberPDBFixer.run() funtion.
@@ -70,7 +86,7 @@ class PDB4AmberRunner(Runner):
         logger.info(f"Command: reduce -BUILD -NUC -NOFLIP -")
         reduce_runner = SubprocessRunner("reduce -BUILD -NUC -NOFLIP -", reduce_input.getvalue(), check=False)
         reduce_runner.run()
-        reduce_log = reduce_runner.stdout
+        reduce_log = reduce_runner.stderr
         logger.debug(f"Reduce log: \n{reduce_log}\n")
         pdbfixer.parm = parmed.read_PDB(io.StringIO(reduce_runner.stdout))
         sumdict = pdbfixer._summary()
@@ -82,24 +98,43 @@ class PDB4AmberRunner(Runner):
         if ns_mask != ':':
             pdbfixer.parm[ns_mask].save(nonprot, format='pdb')
         self.nonprot = nonprot.getvalue()
-        # keep only protein or only compatible residues:======================
-        if self.prot_only:
-            logger.info(f"Keeping only protein residues")
-            pdbfixer.parm.strip('!:' + ','.join(_pdb4amber.pdb4amber.RESPROT))
-        if self.amber_only:
-            logger.info(f"Keeping only Amber compatible residues")
-            pdbfixer.parm.strip('!:' + ','.join(_pdb4amber.pdb4amber.AMBER_SUPPORTED_RESNAMES))
-        # strip atoms with given mask    =====================================
-        if self.custom_mask:
-            logger.info(f"Stripping atoms with mask: {self.custom_mask}")
-            pdbfixer.parm.strip(self.custom_mask)
         # remove water if -d option used:=====================================
+        # remove water should be done before only protein residues, since waters are not protein residues
+        water_mask = ':' + ','.join(parmed.residue.WATER_NAMES)
+        water = io.StringIO()
+        pdbfixer.parm[water_mask].save(water, format='pdb')
+        self.water = water.getvalue()
         if self.rm_water:
             logger.info(f"Removing water and saving the waters")
             water = io.StringIO()
-            pdbfixer.parm[':' + ','.join(parmed.residue.WATER_NAMES)].save(water, format='pdb')
+            pdbfixer.parm[water_mask].save(water, format='pdb')
             self.water = water.getvalue()
             pdbfixer.remove_water()
+        # keep only protein residues:======================
+        prot_mask = ':' + ','.join(_pdb4amber.pdb4amber.RESPROT)
+        prot = io.StringIO()
+        pdbfixer.parm[prot_mask].save(prot, format='pdb')
+        self.prot = prot.getvalue()
+        if self.prot_only:
+            logger.info(f"Keeping only protein residues")
+            pdbfixer.parm.strip('!' + prot_mask)
+        # keep only Amber compatible residues:===============================
+        amber_mask = ':' + ','.join(_pdb4amber.pdb4amber.AMBER_SUPPORTED_RESNAMES)
+        amber = io.StringIO()
+        pdbfixer.parm[amber_mask].save(amber, format='pdb')
+        self.amber = amber.getvalue()
+        if self.amber_only:
+            logger.info(f"Keeping only Amber compatible residues")
+            pdbfixer.parm.strip('!' + amber_mask)
+        # strip atoms with given mask =====================================
+        if self.custom_mask:
+            logger.info(f"Stripping atoms with mask: {self.custom_mask}")
+            custom = io.StringIO()
+            pdbfixer.parm[self.custom_mask].save(custom, format='pdb')
+            self.custom = custom.getvalue()
+            pdbfixer.parm.strip(self.custom_mask)
+        else:
+            logger.info(f"No custom mask given, leaving self.custom is None")
         # find histidines that might have to be changed:=====================
         logger.info(f"Assigning histidines")
         pdbfixer.assign_histidine()
@@ -148,12 +183,3 @@ class PDB4AmberRunner(Runner):
     @property
     def success(self) -> bool:
         return self.pdbout is not None
-
-
-if __name__ == '__main__':
-    from pdbfixer_runner import PDBFixerRunner
-    pdbfixer = PDBFixerRunner('test_data/10GS.pdb', '10GS.pdb')
-    pdbfixer.run()
-    amber = PDB4AmberRunner(pdbfixer.pdbout, '10GS.pdb', prot_only=True)
-    amber.run()
-    print(amber.nonprot)
