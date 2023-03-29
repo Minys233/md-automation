@@ -93,7 +93,7 @@ class PDB2PQRRunner(Runner):
         self._operated = True
 
         definition = io.get_definitions()
-        pdblist, _ = pdb.read_pdb(StringIO(pdbstr))
+        pdblist, _ = pdb.read_pdb(StringIO(self.pdbin))
         if self.drop_water:
             pdblist = drop_water(pdblist)
 
