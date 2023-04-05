@@ -1,11 +1,10 @@
 import acpype
 from acpype.topol import ACTopol
 import io
-from util import StringStream, ligand_from_rcsb_model, ligand_from_ligand_expo, find_ligand
+from util import StringStream
 from typing import Union
 from runner import Runner
 from subprocess_runner import SubprocessRunner
-import parmed
 from pathlib import Path
 import openbabel
 

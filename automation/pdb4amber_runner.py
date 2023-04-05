@@ -11,8 +11,8 @@ logging.basicConfig()
 logger = logging.getLogger(__name__)
 
 class PDB4AmberRunner(Runner):
-    def __init__(self, pdbin: Union[str, Path, io.IOBase, StringStream], name: str = '', **kwargs):
-        self.pdbin = StringStream(pdbin, name)
+    def __init__(self, pdbin: Union[str, Path, io.IOBase, StringStream], **kwargs):
+        self.pdbin = StringStream(pdbin)
         self.kwargs = kwargs
 
         super().__init__(f'pdb4amber', False)
@@ -23,8 +23,12 @@ class PDB4AmberRunner(Runner):
         self.missing_atom_residues = None
         self.pdbout = None
 
+        self.reduce_log = None
+        self.reduce_out = None
+
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}({self.pdbin.name}), rm_water={self.rm_water}, prot_only={self.prot_only}, amber_only={self.amber_only}, custom_mask={self.custom_mask})'
+        pass
+        # return f'{self.__class__.__name__}({self.pdbin.name}), rm_water={self.rm_water}, prot_only={self.prot_only}, amber_only={self.amber_only}, custom_mask={self.custom_mask})'
 
     def run(self, ignore_opreated: bool=False):
         """This function is modified from pdb4amber.AmberPDBFixer.run() funtion.
@@ -39,7 +43,6 @@ class PDB4AmberRunner(Runner):
         self._operated = True
 
         logger.info(f"Using pdb4amber package with version: {_pdb4amber.__version__}")
-        logger.info(f"Running pdb4amber for: {self.pdbin.name}")
         pdbin = self.pdbin._handle
         parm = parmed.read_PDB(pdbin)
         pdbfixer = _pdb4amber.AmberPDBFixer(parm)
@@ -53,10 +56,18 @@ class PDB4AmberRunner(Runner):
         logger.info(f"Command: reduce -BUILD -NUC -NOFLIP -")
         reduce_runner = SubprocessRunner("reduce -BUILD -NUC -NOFLIP -", reduce_input.getvalue(), check=False)
         reduce_runner.run()
-        reduce_log = reduce_runner.stderr
-        logger.debug(f"Reduce log: \n{reduce_log}\n")
-        pdbfixer.parm = parmed.read_PDB(io.StringIO(reduce_runner.stdout))
-        sumdict = pdbfixer._summary()
+        self.reduce_log = reduce_runner.stderr
+        logger.debug(f"Reduce log: \n{self.reduce_log}\n")
+        self.reduce_out = reduce_runner.stdout
+        # Patch output from the reduce program
+        # Known issues:
+        # 1. reduce add a strange HCA atom for GLH residue, that H should be HA
+        # ATOM      0  HCA GLH A 197      18.003 -10.414  33.179  1.00  0.00           H   new
+        templines = [line for line in self.reduce_out.split('\n') if not line.startswith('ATOM      0  HCA GLH ')]
+        self.reduce_out = '\n'.join(templines)
+        pdbfixer.parm = parmed.read_PDB(io.StringIO(self.reduce_out))
+        # sumdict = pdbfixer._summary()
+        sumdict = dict(has_altlocs=False) # we have already removed altlocs
         # find histidines that might have to be changed:=====================
         logger.info(f"Assigning histidines")
         pdbfixer.assign_histidine()
@@ -88,7 +99,7 @@ class PDB4AmberRunner(Runner):
             atom.altloc = ''
             for oatom in atom.other_locations.values():
                 oatom.altloc = ''
-        pdbout = pdbfixer._write_pdb_to_stringio(cys_cys_atomidx_set, disulfide_conect=True, noter=False, **write_kwargs)
+        pdbout = pdbfixer._write_pdb_to_stringio(cys_cys_atomidx_set, disulfide_conect=True, noter=False, altlocs='first', **write_kwargs)
         self.pdbout = pdbout.getvalue()
 
     @property

@@ -40,8 +40,15 @@ PDB_OTHER_PREFIX = (
 
 
 # maybe shutdown soon! but we kept a local copy haha
+PROTEIN_RCSB_BASE = 'https://files.rcsb.org/download/{}.pdb'
 LIGAND_EXPO_BASE = 'http://ligand-expo.rcsb.org/files/{}/{}/isdf/'
 MODELS_RCSB_BASE = 'https://models.rcsb.org/v1/{}/ligand?auth_asym_id={}&label_comp_id={}&model_nums=1&encoding={}'
+
+
+def protein_from_rcsb(pdbid: str) -> str:
+    url = PROTEIN_RCSB_BASE.format(pdbid)
+    logger.info(f"Fetching protein data from {url}")
+    return urllib.request.urlopen(url).read().decode('utf-8')
 
 def ligand_from_ligand_expo(pdbid: str, resname: str, chain: str) -> str:
     url = LIGAND_EXPO_BASE.format(resname[0].upper(), resname.upper())
